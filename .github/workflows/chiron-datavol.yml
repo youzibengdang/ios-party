@@ -1,6 +1,9 @@
 name: chiron data volume
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/chiron-datavol.yml'
 permissions:
   contents: read
 jobs:
@@ -19,7 +22,6 @@ jobs:
           sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
           sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends hfsprogs curl
           command -v mkfs.hfsplus
-          mkfs.hfsplus -V || true
           df -h "$RUNNER_TEMP"
       - name: Fetch the official mkdatavol tool
         run: |
