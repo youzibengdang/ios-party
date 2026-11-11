@@ -1,0 +1,53 @@
+name: chiron loader only
+
+on:
+  push:
+    branches: ['codex/hackios-chiron']
+    paths:
+      - '.github/workflows/chiron-loader-only.yml'
+      - 'ci/hackios/phone_loader.py'
+      - 'ci/hackios/apply_chiron.py'
+      - 'ci/hackios/apply_chiron_usb.py'
+      - 'ci/hackios/apply_chiron_memory.py'
+      - 'ci/hackios/apply_chiron_rootufs.py'
+      - 'ci/hackios/chiron_root_ufs.inc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  loader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install the loader toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm
+          clang --version
+      - name: Build loader.efi from source with the darwin overlay
+        run: |
+          mkdir -p dist/phone
+          printf '{}\n' > dist/phone/inputs.json
+          python3 ci/hackios/phone_loader.py --work "$RUNNER_TEMP/chiron-loader" --phone dist/phone
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('dist/phone/inputs.json')
+          d = json.loads(p.read_text())
+          print('loader', d.get('loader'))
+          print('root volume', d.get('root_volume_source'))
+          assert d.get('root_volume_source', {}).get('root_partition') == 'darwin'
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: chiron-loader-darwin
+          path: dist/phone/
+          if-no-files-found: error
+          retention-days: 14
