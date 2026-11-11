@@ -7,8 +7,9 @@ from pathlib import Path
 import shutil
 
 import apply_chiron
-import apply_chiron_usb
 import apply_chiron_memory
+import apply_chiron_rootufs
+import apply_chiron_usb
 import cloud
 
 
@@ -21,11 +22,13 @@ def main():
     sources = json.loads(cloud.SOURCES.read_text())
     cloud.fetch_git(args.work, sources["kernel"]["url"], sources["kernel"]["commit"])
     patch = cloud.ROOT / "ci/hackios/patches/0001-wait-for-ramfb-dma.patch"
-    cloud.command(["git", "-C", args.work, "apply", patch])
+    cloud.command(["git", "-C", str(args.work), "apply", str(patch)])
     profile = json.loads(Path(__file__).with_name("chiron-profile.json").read_text())
     apply_chiron.loader_overlay(args.work, profile)
     apply_chiron_usb.apply(args.work)
     apply_chiron_memory.apply(args.work)
+    # The installed phone has no host: the root volume comes from the darwin partition.
+    rootufs = apply_chiron_rootufs.apply(args.work)
     cloud.command(["bash", "xnuloader/build.sh"], cwd=args.work)
     shutil.copy2(args.work / "xnuloader/loader.efi", args.phone / "loader.efi")
     inputs = json.loads((args.phone / "inputs.json").read_text())
@@ -36,6 +39,7 @@ def main():
     inputs["memory_loader_source_sha256"] = cloud.digest(
         args.work / "xnuloader/chiron_memory_window.inc")["sha256"]
     inputs["memory_policy"] = "PEI-described high bank; free-map checked, allocated, ownership verified"
+    inputs["root_volume_source"] = rootufs
     cloud.save(args.phone / "inputs.json", inputs)
 
 
