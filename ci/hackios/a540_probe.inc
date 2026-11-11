@@ -46,6 +46,8 @@
 #define A540_GPUCC_GX_CLAMP     0x0130u
 #define A540_GPUCC_GFX3D_CBCR   0x1098u         /* bit 0: the clock; bit 13: the core's own logic */
 #define A540_GPUCC_RBBMTIMER    0x10d0u
+#define A540_GPUCC_RBBMTIMER_RCGR 0x10b0u       /* rbbmtimer_clk_src: source 0 = XO, /1 */
+#define A540_GPUCC_RCG_UPDATE   (1u << 0)       /* written to cmd_rcgr, clears when latched */
 #define A540_GPUCC_GPUPLL0      0x0000u
 
 /* a GDSC's control register (gdsc.c) */
@@ -125,6 +127,19 @@ a540_clock(const char *block, vm_offset_t base, const char *name, uint32_t cbcr,
 	    (now & (1u << 31)) ? " (still says off)" : " (on)");
 }
 
+/* Point a root clock generator at its XO input with a divider of one (clk-rcg2.c: the source
+ * selection and the divider live in cmd_rcgr + 4, and cmd_rcgr's bit 0 latches them). */
+static void
+a540_rcg_xo(const char *name, uint32_t cmd_rcgr)
+{
+	uint32_t was = a540_rd(a540_gpucc, cmd_rcgr + 4);
+
+	a540_wr(a540_gpucc, cmd_rcgr + 4, 0);
+	a540_wr(a540_gpucc, cmd_rcgr, a540_rd(a540_gpucc, cmd_rcgr) | A540_GPUCC_RCG_UPDATE);
+	a540_wait(a540_gpucc, cmd_rcgr, A540_GPUCC_RCG_UPDATE, 0, 40);
+	printf("a540: gpucc %s: %#x -> %#x (source XO, /1)\n", name, was, a540_rd(a540_gpucc, cmd_rcgr + 4));
+}
+
 static void
 a540_dump_core(const char *when)
 {
@@ -196,13 +211,24 @@ redwood_adreno_a540_probe(uint32_t through)
 		return 3;
 	}
 	printf("a540: 3: CX has power\n");
-	/* Step 4: the core itself. Its clock is the GPU PLL divided by three, which the loader may have left running. */
+	/* Step 4: the core itself. Its power switch completes only once its clock runs, and the
+	 * clock source is left unprogrammed (0) by the loader, so both are done here: the source is
+	 * pointed at XO (parent 0 in gpu_xo_gpupll0_map) with a divider of one -- enough to make the
+	 * switch settle while the PLL stays out of it -- then the clamp is deasserted, the branch
+	 * opened and the switch closed. */
 	printf("a540: 4: gfx3d_clk_src %#x, gpupll0 mode %#x: the core's clock comes from the GPU PLL\n",
 	    a540_rd(a540_gpucc, A540_GPUCC_GFX3D_RCGR + 4), a540_rd(a540_gpucc, A540_GPUCC_GPUPLL0 + 8));
 	a540_clock("gpucc", a540_gpucc, "cxo", A540_GPUCC_CXO_CBCR, 1u << 0);
+	a540_rcg_xo("gfx3d_clk_src", A540_GPUCC_GFX3D_RCGR);
+	a540_rcg_xo("rbbmtimer_clk_src", A540_GPUCC_RBBMTIMER_RCGR);
 	a540_clock("gpucc", a540_gpucc, "rbbmtimer", A540_GPUCC_RBBMTIMER, 1u << 0);
 	a540_clock("gpucc", a540_gpucc, "rbcpr", A540_GPUCC_RBCPR_CBCR, 1u << 0);
-	printf("a540: 4: gx_gdscr %#x: the 3D core's power switch\n", a540_rd(a540_gpucc, A540_GPUCC_GX_GDSCR));
+	/* the core's clamp has to come off before its switch can close (gdsc.c, CLAMP_IO) */
+	printf("a540: 4: gx clamp %#x -> 0, then gx_gdscr %#x\n", a540_rd(a540_gpucc, A540_GPUCC_GX_CLAMP),
+	    a540_rd(a540_gpucc, A540_GPUCC_GX_GDSCR));
+	a540_wr(a540_gpucc, A540_GPUCC_GX_CLAMP, 0);
+	/* the core's own clock has to be running before its switch will close */
+	a540_clock("gpucc", a540_gpucc, "gfx3d", A540_GPUCC_GFX3D_CBCR, (1u << 0) | (1u << 13));
 	a540_wr(a540_gpucc, A540_GPUCC_GX_GDSCR, a540_rd(a540_gpucc, A540_GPUCC_GX_GDSCR) & ~A540_GDSC_SW_COLLAPSE);
 	if (!a540_wait(a540_gpucc, A540_GPUCC_GX_GDSCR, A540_GDSC_POWER_ON, A540_GDSC_POWER_ON, 400)) {
 		printf("a540: 4: the core does not come on (gx_gdscr %#x, clamp %#x)\n",
@@ -210,7 +236,6 @@ redwood_adreno_a540_probe(uint32_t through)
 		return 4;
 	}
 	printf("a540: 4: the core has power\n");
-	a540_clock("gpucc", a540_gpucc, "gfx3d", A540_GPUCC_GFX3D_CBCR, (1u << 0) | (1u << 13));
 	/* Step 5: what the core says of itself, now that all of it is fed. */
 	a540_dump_core("with power and clocks");
 	printf("a540: 5: gfx3d_cbcr %#x, rcgr %#x, cx %#x, gx %#x\n", a540_rd(a540_gpucc, A540_GPUCC_GFX3D_CBCR),
