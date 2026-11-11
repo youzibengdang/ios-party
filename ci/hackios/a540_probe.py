@@ -18,7 +18,10 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 INC = HERE / "a540_probe.inc"
 
-PROTO = "static uint32_t redwood_adreno_a540_probe(uint32_t through);\n"
+PROTO = (
+    "static uint32_t redwood_adreno_a540_probe(uint32_t through);\n"
+    "static bool redwood_adreno_a540_asked(uint32_t *through);\n"
+)
 
 ANCHOR_DEF = "void\nredwood_adreno_init(void)\n"
 ANCHOR_CALL = '\tif (!PE_parse_boot_argn("adreno", &last_step, sizeof(last_step))) {\n'
