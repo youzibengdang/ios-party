@@ -111,3 +111,53 @@ chiron_root_from_ufs(void)
 	    (READ_SYSREG(CNTVCT_EL0) - started) / 19200, dest[32], dest[33], dest[34], dest[35]);
 	return 1;
 }
+
+/*
+ * The other half: put the volume that is already in the resident area into the partition.
+ * The host cannot flash 2.4 GB itself (its fastboot client dies on an image that size), so it
+ * sends the volume once with "oem ramdisk" and this writes it out from RAM, chunk by chunk.
+ */
+static int
+chiron_root_to_ufs(void)
+{
+	efi_block_io *bio;
+	uint64_t bs, done, started, chunk;
+
+	bio = chiron_root_partition();
+	if (bio == NULL) {
+		print("root: no partition named system\n");
+			return 0;
+	}
+	if (resident_rd_size == 0) {
+		print("root: nothing is resident; send the volume with 'oem ramdisk' first\n");
+		return 0;
+	}
+	bs = bio->media->block_size;
+	if (resident_rd_size > (bio->media->last_block + 1) * bs) {
+		print("root: %d bytes do not fit in the partition (%d blocks of %d)\n", resident_rd_size,
+		    bio->media->last_block + 1, bs);
+		return 0;
+	}
+	print("root: writing %d MB to 'system', %d bytes per block\n", resident_rd_size >> 20, bs);
+	started = READ_SYSREG(CNTVCT_EL0);
+	for (done = 0; done < resident_rd_size; done += chunk) {
+		chunk = CHIRON_ROOT_CHUNK;
+		if (resident_rd_size - done < chunk) {
+			chunk = resident_rd_size - done;
+		}
+		if (EFI_ERROR(bio->write_blocks(bio, bio->media->media_id, done / bs, chunk / bs,
+		    (uint8_t *)(win_base + RESIDENT_RD_OFFSET) + done))) {
+			print("root: write failed at block %d\n", done / bs);
+			return 0;
+		}
+		if ((done >> 20) % 256 == 0) {
+			print("root: %d of %d MB written\n", done >> 20, resident_rd_size >> 20);
+		}
+	}
+	if (!EFI_ERROR(bio->flush_blocks(bio))) {
+		print("root: flushed\n");
+	}
+	print("root: %d MB written in %d ms; reading it back\n", resident_rd_size >> 20,
+	    (READ_SYSREG(CNTVCT_EL0) - started) / 19200);
+	return 1;
+}
