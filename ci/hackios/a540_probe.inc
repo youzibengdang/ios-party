@@ -175,6 +175,7 @@ redwood_adreno_a540_probe(uint32_t through)
 	    a540_rd(a540_gcc, A540_GCC_BIMC_GFX), a540_rd(a540_gcc, A540_GCC_GPU_PLL_VOTES));
 	if (read_only) {
 		a540_dump_core("read only, with whatever power the loader left");
+		a540_show_screen();
 		return 1;
 	}
 	/* Step 2: the clocks outside the block. Without the register bus clock, nothing in it answers. */
@@ -215,6 +216,7 @@ redwood_adreno_a540_probe(uint32_t through)
 	printf("a540: 5: gfx3d_cbcr %#x, rcgr %#x, cx %#x, gx %#x\n", a540_rd(a540_gpucc, A540_GPUCC_GFX3D_CBCR),
 	    a540_rd(a540_gpucc, A540_GPUCC_GFX3D_RCGR + 4), a540_rd(a540_gpucc, A540_GPUCC_CX_GDSCR),
 	    a540_rd(a540_gpucc, A540_GPUCC_GX_GDSCR));
+	a540_show_screen();
 	if (through == 2) {
 		printf("a540: 5: left powered and clocked, as asked\n");
 		return 0;
