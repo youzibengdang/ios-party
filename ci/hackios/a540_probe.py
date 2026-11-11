@@ -39,12 +39,50 @@ CALL = (
 )
 
 
+def patch_loader(root: pathlib.Path) -> int:
+    """Teach the loader to fill the resident root area from a UFS partition ("oem rootufs").
+
+    Without this a kernel iteration costs a 2.4 GB transfer, because the loader keeps the
+    volume in RAM and forgets it on reset.
+    """
+    inc = HERE / "chiron_root_ufs.inc"
+    targets = list(root.glob("**/xnuloader/loader.c"))
+    if not targets:
+        print("a540: no xnuloader/loader.c under", root, file=sys.stderr)
+        return 2
+    anchor_place = "#define USB_EP_OUT   0x01"
+    anchor_cmd = '\t\t} else if (starts_with(cmd, "oem log")) {\n'
+    hook = (
+        '\t\t} else if (starts_with(cmd, "oem rootufs")) {\n'
+        '\t\t\t/* the root volume comes out of the "system" partition instead of the USB wire */\n'
+        '\t\t\tfb_reply("OKAY", "");\n'
+        '\t\t\tlog_len = 0;\n'
+        '\t\t\tchiron_root_from_ufs();\n'
+    )
+    for target in targets:
+        text = target.read_text(encoding="utf-8")
+        if "chiron_root_from_ufs" in text:
+            print("a540: loader already carries oem rootufs in", target)
+            continue
+        if anchor_place not in text or anchor_cmd not in text:
+            print("a540: loader anchors missing in", target, file=sys.stderr)
+            return 4
+        text = text.replace(anchor_place, inc.read_text(encoding="utf-8").rstrip("\n") + "\n\n" + anchor_place, 1)
+        text = text.replace(anchor_cmd, hook + anchor_cmd, 1)
+        target.write_text(text, encoding="utf-8")
+        print("a540: loader patched", target, len(text), "bytes")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", required=True, help="$PORT_WORK/kernel, or the xnu tree itself")
     args = ap.parse_args()
 
     root = pathlib.Path(args.source)
+    status = patch_loader(root)
+    if status not in (0,):
+        return status
     targets = list(root.glob("**/files/bsd/dev/redwood_adreno.c")) or list(root.glob("**/redwood_adreno.c"))
     if not targets:
         print("a540: no redwood_adreno.c under", root, file=sys.stderr)
