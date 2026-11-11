@@ -1,0 +1,41 @@
+name: chiron data volume
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  datavol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install hfsprogs
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+          fi
+          sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends hfsprogs curl
+          command -v mkfs.hfsplus
+          mkfs.hfsplus -V || true
+          df -h "$RUNNER_TEMP"
+      - name: Fetch the official mkdatavol tool
+        run: |
+          mkdir -p tools/upstream dist
+          curl -fsSL -o tools/upstream/mkdatavol.py https://raw.githubusercontent.com/oosexgang/hakios-xnu-kernel/main/tools/mkdatavol.py
+          sha256sum tools/upstream/mkdatavol.py
+          grep -n "DATA_FIRST\|DARWIN_BLOCKS" tools/upstream/mkdatavol.py
+      - name: Build the data volume
+        run: |
+          python3 tools/upstream/mkdatavol.py dist/darwin-data.simg "$(command -v mkfs.hfsplus)"
+          ls -l dist/darwin-data.simg
+          sha256sum dist/darwin-data.simg
+      - name: Upload the data volume
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: chiron-datavol-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/darwin-data.simg
+          retention-days: 5
+          compression-level: 0
