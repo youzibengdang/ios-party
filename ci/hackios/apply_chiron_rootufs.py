@@ -52,8 +52,8 @@ def apply(work):
     # read failed, resident_rd_size is 0 and the USB channel starts exactly as before.
     text = replace_once(
         text,
-        "\tif (have_payload && pi.usb_mode && usb_start()) {",
-        "\tif (have_payload && pi.usb_mode && !resident_rd_size && usb_start()) {",
+        "\tif (have_payload && pi.usb_mode) {\n\t\tif (!usb_start()) {",
+        "\tif (have_payload && pi.usb_mode && !resident_rd_size) {\n\t\tif (!usb_start()) {",
     )
     loader.write_text(text)
     return {
