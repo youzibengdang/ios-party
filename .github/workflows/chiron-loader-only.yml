@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   loader:
@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 20
     env:
       PYTHONDONTWRITEBYTECODE: '1'
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -32,19 +33,25 @@ jobs:
           sudo apt-get install -y clang lld llvm
           clang --version
       - name: Build loader.efi from source with the darwin overlay
-        continue-on-error: true
         run: |
-          set -x
           mkdir -p dist/phone
           printf '{}\n' > dist/phone/inputs.json
           python3 ci/hackios/phone_loader.py --work "$RUNNER_TEMP/chiron-loader" --phone dist/phone 2>&1 | tee dist/build.log
-          echo "exit=$?" >> dist/build.log
-      - name: Collect the loader and its build log
+      - name: Record the loader in the repository
         run: |
-          ls -l dist/phone dist/build.log 2>&1 | tee -a dist/build.log
-          cp "$RUNNER_TEMP/chiron-loader/xnuloader/loader.c" dist/loader.c 2>/dev/null || true
-          cp "$RUNNER_TEMP/chiron-loader/xnuloader/build.sh" dist/build.sh 2>/dev/null || true
-          test -s dist/phone/loader.efi
+          set -e
+          name="chiron-darwin-loader-${{ github.run_id }}.efi"
+          sha=$(sha256sum dist/phone/loader.efi | cut -d' ' -f1)
+          echo "$sha  $name" > dist/loader.sha256
+          gh api --method PUT "/repos/$GITHUB_REPOSITORY/contents/artifacts/chiron/$name" \
+            -f message="ci: record the darwin loader ${{ github.run_id }}" \
+            -f branch="codex/hackios-chiron" \
+            -f content="$(base64 -w0 dist/phone/loader.efi)" > /dev/null
+          gh api --method PUT "/repos/$GITHUB_REPOSITORY/contents/artifacts/chiron/$name.sha256" \
+            -f message="ci: record the darwin loader digest ${{ github.run_id }}" \
+            -f branch="codex/hackios-chiron" \
+            -f content="$(base64 -w0 dist/loader.sha256)" > /dev/null
+          echo "COMMITTED artifacts/chiron/$name sha256=$sha bytes=$(stat -c%s dist/phone/loader.efi)" | tee -a dist/build.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
