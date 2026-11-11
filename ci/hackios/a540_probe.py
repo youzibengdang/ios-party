@@ -17,10 +17,12 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 INC = HERE / "a540_probe.inc"
+SHOW = HERE / "a540_show.inc"
 
 PROTO = (
     "static uint32_t redwood_adreno_a540_probe(uint32_t through);\n"
     "static bool redwood_adreno_a540_asked(uint32_t *through);\n"
+    "static void a540_show_screen(void);\n"
 )
 
 ANCHOR_DEF = "void\nredwood_adreno_init(void)\n"
@@ -60,7 +62,9 @@ def main() -> int:
             return 4
         text = text.replace(ANCHOR_DEF, PROTO + "\n" + ANCHOR_DEF, 1)
         text = text.replace(ANCHOR_CALL, CALL + ANCHOR_CALL, 1)
-        text = text.rstrip("\n") + "\n\n" + INC.read_text(encoding="utf-8").rstrip("\n") + "\n"
+        text = (text.rstrip("\n") + "\n\n"
+                + INC.read_text(encoding="utf-8").rstrip("\n") + "\n\n"
+                + SHOW.read_text(encoding="utf-8").rstrip("\n") + "\n")
         target.write_text(text, encoding="utf-8")
         print("a540: patched", target, len(text), "bytes")
     return 0
