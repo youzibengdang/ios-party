@@ -58,6 +58,13 @@ def patch_loader(root: pathlib.Path) -> int:
         '\t\t\tfb_reply("OKAY", "");\n'
         '\t\t\tlog_len = 0;\n'
         '\t\t\tchiron_root_from_ufs();\n'
+        '\t\t} else if (starts_with(cmd, "oem writesys")) {\n'
+        '\t\t\t/* put the resident volume into that partition, once, so later boots read it back */\n'
+        '\t\t\tfb_reply("OKAY", "");\n'
+        '\t\t\tlog_len = 0;\n'
+        '\t\t\tif (chiron_root_to_ufs()) {\n'
+        '\t\t\t\tchiron_root_from_ufs();\n'
+        '\t\t\t}\n'
     )
     for target in targets:
         text = target.read_text(encoding="utf-8")
